@@ -1,0 +1,610 @@
+> save.image("~/workspace.RData")
+> load("C:/Users/algomez/Documents/workspace.RData")
+
+---
+title: "FL scRNA-seq"
+author: "Alejandro Caballero"
+date: "10/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+install.packages('Seurat')
+install.packages('hdf5r')
+library('hdf5r')
+install.packages('tidyverse')
+ 
+if (!requireNamespace('BiocManager', quietly = TRUE))
+   install.packages('BiocManager')
+install.packages('dplyr')
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+install.packages("xlsx")
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(c('BiocGenerics', 'DelayedArray', 'DelayedMatrixStats','limma', 'S4Vectors', 'SingleCellExperiment','SummarizedExperiment','batchelor', 'Matrix.utils'))
+install.packages("devtools")
+devtools::install_github('cole-trapnell-lab/leidenbase')
+devtools::install_github('cole-trapnell-lab/monocle3', ref="develop")
+
+devtools::install_github('satijalab/seurat-data')
+
+install.packages("remotes")
+remotes::install_github("satijalab/seurat-wrappers")
+usethis::use_git_config(user.name = "Acaba061", user.email = "acaba061@uottawa.ca")
+usethis::create_github_token() 
+usethis::edit_r_environ()
+usethis::git_sitrep()
+remotes::install_github('satijalab/seurat-wrappers')
+remotes::install_github('tfrayner/seurat-wrappers', ref='monocle3-conversion-bugfix')
+install.packages('Signac')
+```
+
+```{r}
+library(httr)
+
+set_config(use_proxy(url=”18.91.12.23”, port=8080, username=”algomez”, password=”Canada300149056.”))
+
+install_github(‘rWBclimate’, ‘ropensci’)
+```
+
+
+```{r}
+library('devtools')
+library('fgsea')
+library('Seurat')
+library('tidyverse')
+library("dplyr")
+library("xlsx")
+library("monocle3")
+library('goseq')
+library('org.Mm.eg.db')
+library('SeuratData')
+library('SeuratWrappers')
+library('Signac')
+```
+
+
+```{r}
+gene_sets <- c(fgsea::gmtPathways("https://raw.githubusercontent.com/dpcook/scrna_seq_workshop_2020/master/data/hallmark.genesets.v6.1.symbols.gmt"), fgsea::gmtPathways("https://raw.githubusercontent.com/dpcook/scrna_seq_workshop_2020/master/data/kegg.genesets.v6.1.symbols.gmt"), fgsea::gmtPathways("https://github.com/dpcook/scrna_seq_workshop_2020/blob/master/data/GOTerms.BP.v6.1.symbols.gmt"), fgsea::gmtPathways("https://raw.githubusercontent.com/dpcook/scrna_seq_workshop_2020/master/data/reactome.genesets.v6.1.symbols.gmt"))
+```
+
+#Genotype annotation
+```{r}
+WTS = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/ellio/Desktop/Alex/Stanford lab/FL scRNA-seq/second run/WT/filtered_feature_bc_matrix.h5", use.names=TRUE))
+KO1S = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/ellio/Desktop/Alex/Stanford lab/FL scRNA-seq/second run/KO1/filtered_feature_bc_matrix.h5", use.names=TRUE))
+KO2S = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/ellio/Desktop/Alex/Stanford lab/FL scRNA-seq/second run/KO2/filtered_feature_bc_matrix.h5", use.names=TRUE))
+
+GWT = rep('WT', times = 17807)
+GKO1 = rep('KO', times = 19930)
+GKO2 = rep('KO', times = 21080)
+
+WTS@meta.data <- cbind(WTS@meta.data, GWT)
+KO1S@meta.data <- cbind(KO1S@meta.data, GKO1)
+KO2S@meta.data <- cbind(KO2S@meta.data, GKO2)
+
+colnames(WTS@meta.data)[which(names(WTS@meta.data) == "GWT")] <- "GT"
+colnames(KO1S@meta.data)[which(names(KO1S@meta.data) == "GKO1")] <- "GT"
+colnames(KO2S@meta.data)[which(names(KO2S@meta.data) == "GKO2")] <- "GT"
+```
+
+11vs14
+```{r}
+gao=subset(S2, idents = 'Gao')
+Idents(gao)="d14.5"
+gao$GT='d14.5'
+d11 = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/algomez/Downloads/filtered_feature_bc_matrix.h5", use.names=TRUE))
+G11 = rep('d11.5', times = 10602)
+d11@meta.data <- cbind(d11@meta.data, G11)
+colnames(d11@meta.data)[which(names(d11@meta.data) == "G11")] <- "GT"
+
+gao = merge(x = gao, y = d11)
+gao = NormalizeData(gao)
+gao = FindVariableFeatures(gao)
+gao = ScaleData(gao)
+gao = RunPCA(gao)
+gao = FindNeighbors(gao)
+gao = FindClusters(gao)
+gao = RunUMAP(gao, dims = 1:10)
+
+deg = FindMarkers(gao, ident.1="d11.5", ident.2 = "d14.5", group.by = "GT")
+deg$gene <- (rownames(deg))
+openxlsx::write.xlsx(deg, file="gao11vs14.xlsx", sheetName = "deg", append = TRUE)
+
+deg$gene <- toupper(rownames(deg))
+deg <- deg %>% arrange(desc(avg_log2FC))
+fc <- deg$avg_log2FC
+names(fc) <- deg$gene
+gsea<- fgsea(gene_sets, fc, eps=0)
+openxlsx::write.xlsx(gsea, file="gao11vs14.xlsx", sheetName = "gsea", append = TRUE)
+
+genes=as.integer(deg$p_val_adj[deg$avg_log2FC!=0]<0.05)
+names(genes)=row.names(deg[deg$avg_log2FC!=0,])
+pwf=nullp(genes, "mm9", "geneSymbol")
+go= goseq(pwf, "mm9", "geneSymbol")
+write.xlsx(go, file="gao11vs14.xlsx", sheetName = "GO", append = TRUE)
+
+sub=subset(gao, idents=c(0,1,2))
+hsc=FindMarkers(sub, ident.1="d11.5", ident.2 = "d14.5", group.by = "GT")
+hsc$gene <- (rownames(hsc))
+openxlsx::write.xlsx(hsc, file="hsc.xlsx", sheetName = "deg", append = TRUE)
+
+hsc$gene <- toupper(rownames(hsc))
+hsc <- hsc %>% arrange(desc(avg_log2FC))
+fc <- hsc$avg_log2FC
+names(fc) <- hsc$gene
+gsea<- fgsea(gene_sets, fc, eps=0)
+openxlsx::write.xlsx(gsea, file="hsc.xlsx", sheetName = "gsea", append = TRUE)
+
+genes=as.integer(hsc$p_val_adj[hsc$avg_log2FC!=0]<0.05)
+names(genes)=row.names(hsc[hsc$avg_log2FC!=0,])
+pwf=nullp(genes, "mm9", "geneSymbol")
+go= goseq(pwf, "mm9", "geneSymbol")
+write.xlsx(go, file="hsc.xlsx", sheetName = "GO", append = TRUE)
+```
+
+Gao vs ours 
+```{r}
+liu = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/algomez/Downloads/outs/outs/filtered_feature_bc_matrix.h5", use.names=TRUE))
+l = rep('Liu', times = 8980)
+liu@meta.data <- cbind(liu@meta.data, l)
+colnames(liu@meta.data)[which(names(liu@meta.data) == "l")] <- "GT"
+liu[["percent.mito"]] <- PercentageFeatureSet(liu, pattern = "^mt-")
+
+S2 = merge(x = S, y = liu)
+S2 = NormalizeData(S2)
+S2 = FindVariableFeatures(S2)
+S2 = ScaleData(S2)
+S2 = RunPCA(S2)
+S2 = FindNeighbors(S2)
+S2 = FindClusters(S2)
+S2 = RunUMAP(S2, dims = 1:10)
+
+overall = FindMarkers(S2, ident.1="WT", ident.2 = "Gao", group.by = "GT")
+overall$gene <- (rownames(overall))
+openxlsx::write.xlsx(overall, file="Liu.xlsx", sheetName = "DEG WT vs Liu", append = TRUE)
+
+genesm1=as.integer(overall$adj.p.value[overall$logfoldchange!=0]<0.05)
+names(genesm1)=overall$gene_names
+pwfm1=nullp(genesm1, "mm9", "geneSymbol")
+gom1= goseq(pwfm1, "mm9", "geneSymbol")
+write.xlsx(gom1, file="Liu.xlsx", sheetName = "go WT vs Liu", append = TRUE)
+
+overall$gene <- toupper(overall$gene)
+overall <- overall %>% arrange(desc(logfoldchange))
+fcm1 <- overall$logfoldchange
+names(fcm1) <- overall$gene
+gseam1 <- fgsea(gene_sets, fcm1, eps=0)
+write.xlsx(gseam1, file="Liu.xlsx", sheetName = "gsea WT vs Liu")
+
+overall2 = FindMarkers(S2, ident.1="KO", ident.2 = "Gao", group.by = "GT")
+overall2$gene <- (rownames(overall2))
+write.xlsx(overall2, file="Liu.xlsx", sheetName = "DEG KO vs Liu", append = TRUE)
+
+genesm12=as.integer(overall2$adj.p.value[overall2$logfoldchange!=0]<0.05)
+names(genesm12)=overall2$gene_names
+pwfm12=nullp(genesm12, "mm9", "geneSymbol")
+gom12= goseq(pwfm12, "mm9", "geneSymbol")
+write.xlsx(gom12, file="Liu.xlsx", sheetName = "go KO vs Liu", append = TRUE)
+
+overall2$gene <- toupper(overall2$gene_names)
+overall2 <- overall2 %>% arrange(desc(logfoldchange))
+fcm12 <- overall2$logfoldchange
+names(fcm12) <- overall2$gene
+gseam12 <- fgsea(gene_sets, fcm12, eps=0)
+write.xlsx(gseam12, file="Liu.xlsx", sheetName = "gsea KO vs Liu")
+
+```
+
+
+#QC
+```{r}
+WTS[["percent.mito"]] <- PercentageFeatureSet(WTS, pattern = "^mt-")
+KO1S[["percent.mito"]] <- PercentageFeatureSet(KO1S, pattern = "^mt-")
+KO2S[["percent.mito"]] <- PercentageFeatureSet(KO2S, pattern = "^mt-")
+
+VlnPlot(WTS, 
+        features = c("nFeature_RNA", "nCount_RNA", "percent.mito"), 
+        pt.size = 0.0,
+        ncol = 3)
+
+
+hist(WTS@meta.data$percent.mito, xlim = c(0,20))
+hist(KO1S@meta.data$percent.mito, xlim = c(0,20))
+hist(KO2S@meta.data$percent.mito, xlim = c(0,20))
+
+hist(WTS@meta.data$nFeature_RNA, xlim = c(0,1000), breaks = 100)
+hist(KO1S@meta.data$nFeature_RNA, xlim = c(0,1000), breaks = 100)
+hist(KO2S@meta.data$nFeature_RNA, xlim = c(0,1000), breaks = 100)
+
+hist(WTS@meta.data$nCount_RNA, breaks = 100, xlim = c(0,10000))
+hist(KO1S@meta.data$nCount_RNA, breaks = 100, xlim = c(0,10000))
+hist(KO2S@meta.data$nCount_RNA, breaks = 100, xlim = c(0,10000))
+
+WTS <- subset(WTS, 
+               subset = nFeature_RNA > 800 & 
+                 percent.mito < 10 &
+              nCount_RNA > 2000)
+
+KO1S <- subset(KO1S, 
+               subset = nFeature_RNA > 800 & 
+                 percent.mito < 10 &
+              nCount_RNA > 2000)
+
+KO2S <- subset(KO2S, 
+               subset = nFeature_RNA > 800 & 
+                 percent.mito < 10 &
+              nCount_RNA > 2000)
+```
+
+#Without QC
+```{r}
+WTS = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/ellio/Desktop/Alex/Stanford lab/FL scRNA-seq/second run/WT/filtered_feature_bc_matrix.h5", use.names=TRUE))
+KO1S = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/ellio/Desktop/Alex/Stanford lab/FL scRNA-seq/second run/KO1/filtered_feature_bc_matrix.h5", use.names=TRUE))
+KO2S = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/ellio/Desktop/Alex/Stanford lab/FL scRNA-seq/second run/KO2/filtered_feature_bc_matrix.h5", use.names=TRUE))
+
+GWT = rep('WT', times = 17807)
+GKO1 = rep('KO', times = 19930)
+GKO2 = rep('KO', times = 21080)
+
+WTS@meta.data <- cbind(WTS@meta.data, GWT)
+KO1S@meta.data <- cbind(KO1S@meta.data, GKO1)
+KO2S@meta.data <- cbind(KO2S@meta.data, GKO2)
+
+colnames(WTS@meta.data)[which(names(WTS@meta.data) == "GWT")] <- "GT"
+colnames(KO1S@meta.data)[which(names(KO1S@meta.data) == "GKO1")] <- "GT"
+colnames(KO2S@meta.data)[which(names(KO2S@meta.data) == "GKO2")] <- "GT"
+
+S = merge(x = KO1S, y = c(KO2S, WTS))
+rm(WTS, KO1S, KO2S, GWT, GKO1, GKO2)
+S = NormalizeData(S)
+S = FindVariableFeatures(S)
+S = ScaleData(S)
+S = RunPCA(S)
+S = FindNeighbors(S)
+S = FindClusters(S)
+S = RunUMAP(S, dims = 1:10)
+
+sub = subset(S, idents = c(0,1,3,4))
+sub = FindNeighbors(sub)
+sub = FindClusters(sub, res=3)
+DimPlot(object = sub, reduction = 'umap', label=T)
+
+sub = RenameIdents(sub, '5'='HSC/MPP1', "1"="HSC/MPP2", "3"="HSC/MPP2", "7"="HSC/MPP2", "0"="HSC/MPP3", "2"="HSC/MPP3", "4"="HSC/MPP3", "6"="HSC/MPP3", "8"="HSC/MPP3", "9"="HSC/MPP3")
+
+S$sub_cluster = as.character(Idents(S))
+S$sub_cluster[Cells(sub)]=paste(Idents(sub))
+Idents(S)=S$sub_cluster
+S = RenameIdents(S, "17"="Hepatoblast", "16"="Endothelial", "4"="MegE progenitor", "12"="Lymphoid progenitor", "11"="Erythrocyte", "7"="Erythroblast", "8"="Basophil", "13"="Megakaryocyte")
+S = RenameIdents(S, "4"="Neutrophil")
+DimPlot(object = S, reduction = 'umap', label=T, cols = col2, label.box = T, repel = T)
+sub=RenameIdents(sub, "10"="Myeloid progenitor")
+q=DotPlot(object = S, assay = "RNA", features=f7)
+q + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+f5=c("Afp", "Alcam", "Lyve1", "Cd34", "Cd48","Alad", "Hbb-bt", "Hbb-bs","Nr3c1", "Car1","Spi1", "Mpo", "Cdk1", "Flt3", "Hoxa9", "Hlf", "Mecom", "Il7r", "Ccl9")
+f6=c("Afp", "Alcam", "Lyve1", "Itga2b", "Pf4","Alad", "Hbb-bt", "Hbb-bs","Nr3c1", "Car1", "Csf1r", "Elane", "Spi1", "Il7r", "Mpo", "Flt3", "Hoxa9", "Hlf", "Mecom")
+f7=c("Cdk1", "Nusap1","Ccnb1", "Aurkb","Birc5", "Top2a", "Cdc20", "Dynll1", "Ran", "Hspd1","Ptp4a3","Ccl4", "Ifitm1", "Hba-a1", "Rbp1", "Mecom")
+
+FeaturePlot(object = sub, features = f6, reduction = 'umap', combine=T)
+
+levels(x=S) <- c("HSC/MPP1","HSC/MPP2","HSC/MPP3","Lymphoid progenitor", "Myeloid progenitor", "Neutrophil", "Macrophage", "Basophil", "MegE progenitor", "Erythroblast","Erythrocyte", "Megakaryocyte", "Endothelial","Hepatoblast")
+
+C9 = FindMarkers(S, ident.1=9, logfc.threshold = 3, only.pos = T)
+id=FetchData(S, vars=c('ident', 'GT'))
+```
+
+
+
+```{r}
+##for trajectory
+
+S[["UMAP"]] <- S[["umap"]]
+
+cds <- as.cell_data_set(S, assay = "RNA")
+cds <- cluster_cells(cds)
+plot_cells(cds, show_trajectory_graph = FALSE)
+plot_cells(cds, group_cells_by = "partition", color_cells_by = "partition",
+           show_trajectory_graph = FALSE)
+
+
+
+integrated.sub <- subset(as.Seurat(cds, assay=NULL), monocle3_partitions == 1)
+integrated.sub <- SplitObject(integrated.sub, split.by = "orig.ident")
+for (i in seq_along(integrated.sub)) {
+    integrated.sub[[i]] <- NormalizeData(integrated.sub[[i]]) %>% FindVariableFeatures()
+}
+features <- SelectIntegrationFeatures(integrated.sub)
+for (i in seq_along(along.with = integrated.sub)) {
+    integrated.sub[[i]] <- ScaleData(integrated.sub[[i]], features = features) %>% RunPCA(features = features, verbose=F)
+}
+
+anchors <- FindIntegrationAnchors(integrated.sub, reference = c(1, 2), reduction = "rpca", dims = 1:30)
+integrated.sub <- IntegrateData(anchors, dims = 1:30)
+
+integrated.sub <- ScaleData(integrated.sub)
+integrated.sub <- RunPCA(integrated.sub)
+integrated.sub <- RunUMAP(integrated.sub, dims = 1:30, reduction.name = "UMAP")
+integrated.sub <- FindNeighbors(integrated.sub, dims = 1:30)
+integrated.sub <- FindClusters(integrated.sub)
+
+DimPlot(integrated.sub, group.by = c("orig.ident", "ident"))
+
+cds <- as.cell_data_set(integrated.sub, assay="RNA")
+cds <- cluster_cells(cds)
+cds <- learn_graph(cds)
+plot_cells(cds, label_groups_by_cluster = FALSE, label_leaves = FALSE, label_branch_points = FALSE)
+DefaultAssay(integrated.sub) <- "RNA"
+max.avp <- which.max(unlist(FetchData(integrated.sub, "Hlf"))) #Find the cell which has the highest Hlf (HSC marker) expression
+max.hlf <- colnames(integrated.sub)[max.hlf]
+cds <- order_cells(cds, root_cells = max.hlf)
+plot_cells(cds, color_cells_by = "pseudotime", label_cell_groups = F, label_leaves = F, 
+    label_branch_points = F)
+plot_cells(cds, label_cell_groups = T, label_leaves = T, 
+    label_branch_points = T)
+
+```
+#color palette
+```{r}
+install.packages('pals')
+library('pals')
+col1=DiscretePalette(n=14, palette = "alphabet")
+col2=DiscretePalette(n=14, palette = "alphabet2")
+```
+
+
+```{r}
+S = NormalizeData(S)
+S = FindVariableFeatures(S)
+S = ScaleData(S)
+S = RunPCA(S)
+S = FindNeighbors(S)
+S = FindClusters(S)
+S = RunUMAP(S, dims = 1:10)
+
+DimPlot(object = S, reduction = 'umap', label = T)
+
+FeaturePlot(object = S, features = "Mtf2", reduction = 'umap', combine=T)
+VlnPlot(S, features="Mtf2", pt.size=0.0, sort = 'increasing')
+VlnPlot(S, features=f2, pt.size=0.0, sort = 'increasing')
+
+f = c("Mtf2", "Ly6a", "Kit", "Slamf1", "Cd48", "Flt3", "Pf4", "Mki67", "Mpo", "Prom1", "Cd34", "Meis1", "Mllt3", "Tespa1", "Plek", "Tfrc", "Top2a")
+f2 = c("Cd34", "Slamf1", "Flt3", "Cd48")
+
+DotPlot(object=S, features = f)
+DotPlot(object=S, features = f2)
+
+tg <- CM %>%  
+ group_by(cluster) %>%  
+ top_n(1, avg_log2FC) %>%  
+ pull(gene)
+
+S = RenameIdents(S, 'mpp-GM'='mpp3-GM')
+
+DimPlot(object = S, reduction = 'umap', label = F)
+
+levels(x=S) <- c('LT-HSC', 'ST-HSC', 'mpp2-Meg', 'mpp2-Ery', 'mpp3-Baso', 'mpp3-GM', 'mpp4-DC-Meg', 'mpp4-B', 'mpp5')
+
+f3 = c("Maf", "Ehd3", "Col4a1", "Meg3", "Gng11", "Eng", "Maged2", "Esam", "Cdkn1c", "Ctsl", "Ccnd1", "Anxa5", "Krt8", "Gchfr", "Id1", "Col4a2", "Apoe", "Pf4", "Car2", "Rhd", "Tmem14c", "Alad", "Hemgn", "Fabp5", "Mki67", "Gmpr", "Ermap", "Cpa3", "Lmo4", "Srgn", "Hdc", "Ms4a2", "Lgals1", "Tyrobp", "Ly6e", "Ctsg", "Mpo", "Prtn3", "Elane", "Serpinb1a", "Plac8", "Gstm1", "Cst3", "Cd52", "Tmsb4x", "Id2",  "Lsp1", "Ighm", "Hlf")
+DotPlot(object=S, features = f3)
+DoHeatmap(S, features=f3, label = F)
+
+f4=c("Cdk1", "Nusap1", "ccnb1", "Aurkb", "Birc5", "Top2a", "Cdc20", "Dynll1", "Ran", "Hmgb1", "Hspd1", "Ptp4a3", "Ccl4", "Iitm1", "Hba-a1", "Rbp1", "Mecom")
+DotPlot(object=S, features = f4)
+
+f5=c("Afp", "Alcam", "Lyve1", "Cd34", "Slamf1", "Cd48", "Hbb-bt", "Hbb-bs", "Spi1", "Mpo", "Flt3", "Hoxa9", "Mycn", "Hlf", "Mecom", "Ccr9", "Il7r", "Ccl9")
+DotPlot(object=S, features = f5)
+
+##for trajectory
+cds <- as.cell_data_set(S, assay = "RNA")
+cds <- cluster_cells(cds)
+
+```
+
+
+```{r}
+VlnPlot(S, features="Cd34", pt.size=0.0, sort = 'decreasing')
+VlnPlot(S, features="Slamf1", pt.size=0.1, sort = 'increasing')
+VlnPlot(S, features="Flt3", pt.size=0.1, sort = 'decreasing')
+VlnPlot(S, features="Cd48", pt.size=0.0, sort = 'decreasing')
+```
+
+#Heatmap
+```{r}
+markers %>%
+  group_by(cluster) %>%
+  top_n(10, abs(avg_log2FC))
+WTtop_genes <- WTmarkers %>% 
+  group_by(cluster) %>% 
+  top_n(1, avg_log2FC) %>% 
+  pull(gene)
+FeaturePlot(WTS, features=WTtop_genes, cols = c("lightgrey", "red"), pt.size=0.25, 
+            combine = T)
+
+top_genes <- CM %>% 
+  group_by(cluster) %>% 
+  top_n(5, avg_log2FC) %>% 
+  pull(gene) %>%
+  unique() #in case any markers are duplicated
+DoHeatmap(S, features = top_genes)
+```
+
+#DEGs WT vs KO
+```{r}
+CM = FindAllMarkers(S, logfc.threshold = 1.5, only.pos = T)
+
+overall = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT")
+overall$gene <- (rownames(overall))
+
+m1 = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "HSC/MPP1")
+m2 = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "HSC/MPP2")
+m3 = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "HSC/MPP3")
+hep = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Hepatoblast")
+endo = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Endothelial")
+lp = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Lymphoid progenitor")
+mp = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Myeloid progenitor")
+megP = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "MegE progenitor")
+meg = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Megakaryocyte")
+eb = FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Erythroblast")
+ec= FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Erythrocyte")
+n= FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Neutrophil")
+mac= FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Macrophage")
+bas= FindMarkers(S, ident.1="WT", ident.2 = "KO", group.by = "GT", subset.ident = "Basophil")
+
+m1$gene <- (rownames(m1))
+m2$gene <- (rownames(m2))
+m3$gene <- (rownames(m3))
+hep$gene <- (rownames(hep))
+endo$gene <- (rownames(endo))
+lp$gene <- (rownames(lp))
+mp$gene <- (rownames(mp))
+meg$gene <- (rownames(meg))
+megP$gene <- (rownames(megP))
+eb$gene <- (rownames(eb))
+ec$gene <- (rownames(ec))
+n$gene <- (rownames(n))
+mac$gene <- (rownames(mac))
+bas$gene <- (rownames(bas))
+
+write.xlsx(m1, file="DEG.xlsx", sheetName = "m1", append = TRUE)
+write.xlsx(m2, file="DEG.xlsx", sheetName = "m2", append = TRUE)
+write.xlsx(m3, file="DEG.xlsx", sheetName = "m3", append = TRUE)
+write.xlsx(hep, file="DEG.xlsx", sheetName = "hep", append = TRUE)
+write.xlsx(endo, file="DEG.xlsx", sheetName = "endo", append = TRUE)
+write.xlsx(lp, file="DEG.xlsx", sheetName = "lp", append = TRUE)
+write.xlsx(megP, file="DEG.xlsx", sheetName = "megP", append = TRUE)
+write.xlsx(meg, file="DEG.xlsx", sheetName = "meg", append = TRUE)
+write.xlsx(eb, file="DEG.xlsx", sheetName = "eb", append = TRUE)
+write.xlsx(ec, file="DEG.xlsx", sheetName = "ec", append = TRUE)
+write.xlsx(mp, file="DEG.xlsx", sheetName = "mp", append = TRUE)
+write.xlsx(n, file="DEG.xlsx", sheetName = "n", append = TRUE)
+write.xlsx(mac, file="DEG.xlsx", sheetName = "mac", append = TRUE)
+write.xlsx(bas, file="DEG.xlsx", sheetName = "bas", append = TRUE)
+```
+
+#GSEA
+```{r}
+m1$gene <- toupper(rownames(m1))
+m1 <- m1 %>% arrange(desc(avg_log2FC))
+fcm1 <- m1$avg_log2FC
+names(fcm1) <- m1$gene
+gseam1 <- fgsea(gene_sets, fcm1, eps=0)
+
+m2$gene <- toupper(rownames(m2))
+m2 <- m2 %>% arrange(desc(avg_log2FC))
+fcm2 <- m2$avg_log2FC
+names(fcm2) <- m2$gene
+gseam2 <- fgsea(gene_sets, fcm2, eps=0)
+
+m3$gene <- toupper(rownames(m3))
+m3 <- m3 %>% arrange(desc(avg_log2FC))
+fcm3 <- m3$avg_log2FC
+names(fcm3) <- m3$gene
+gseam3 <- fgsea(gene_sets, fcm3, eps=0)
+
+hep$gene <- toupper(rownames(hep))
+hep <- hep %>% arrange(desc(avg_log2FC))
+fchep <- hep$avg_log2FC
+names(fchep) <- hep$gene
+gseahep <- fgsea(gene_sets, fchep, eps=0)
+
+endo$gene <- toupper(rownames(endo))
+endo <- endo %>% arrange(desc(avg_log2FC))
+fcendo <- endo$avg_log2FC
+names(fcendo) <- endo$gene
+gseaendo <- fgsea(gene_sets, fcendo, eps=0)
+
+lp$gene <- toupper(rownames(lp))
+lp <- lp %>% arrange(desc(avg_log2FC))
+fclp <- lp$avg_log2FC
+names(fclp) <- lp$gene
+gsealp <- fgsea(gene_sets, fclp, eps=0)
+
+mp$gene <- toupper(rownames(mp))
+mp <- mp %>% arrange(desc(avg_log2FC))
+fcmp <- mp$avg_log2FC
+names(fcmp) <- mp$gene
+gseamp <- fgsea(gene_sets, fcmp, eps=0)
+
+meg$gene <- toupper(rownames(meg))
+meg <- meg %>% arrange(desc(avg_log2FC))
+fcmeg <- meg$avg_log2FC
+names(fcmeg) <- meg$gene
+gseameg <- fgsea(gene_sets, fcmeg, eps=0)
+
+eb$gene <- toupper(rownames(eb))
+eb <- eb %>% arrange(desc(avg_log2FC))
+fceb <- eb$avg_log2FC
+names(fceb) <- eb$gene
+gseaeb <- fgsea(gene_sets, fceb, eps=0)
+
+ec$gene <- toupper(rownames(ec))
+ec <- ec %>% arrange(desc(avg_log2FC))
+fcec <- ec$avg_log2FC
+names(fcec) <- ec$gene
+gseaec<- fgsea(gene_sets, fcec, eps=0)
+
+openxlsx::write.xlsx(gseam1, file="DEG.xlsx", sheetName = "m1", append = TRUE)
+openxlsx::write.xlsx(gseam2, file="DEG.xlsx", sheetName = "m2", append = TRUE)
+openxlsx::write.xlsx(gseam3, file="DEG.xlsx", sheetName = "m3", append = TRUE)
+openxlsx::write.xlsx(gseahep, file="DEG.xlsx", sheetName = "hep", append = TRUE)
+openxlsx::write.xlsx(gseaendo, file="DEG.xlsx", sheetName = "endo", append = TRUE)
+openxlsx::write.xlsx(gsealp, file="DEG.xlsx", sheetName = "lp", append = TRUE)
+openxlsx::write.xlsx(gseameg, file="DEG.xlsx", sheetName = "meg", append = TRUE)
+openxlsx::write.xlsx(gseaeb, file="DEG.xlsx", sheetName = "eb", append = TRUE)
+openxlsx::write.xlsx(gseaec, file="DEG.xlsx", sheetName = "ec", append = TRUE)
+
+openxlsx::write.xlsx(gseamp, file="gsea.xlsx", sheetName = "mp", append = TRUE)
+```
+
+Gene ontology analysis: DE genes (1), non DEG (0)
+```{r}
+genesm1=as.integer(m1$p_val_adj[m1$avg_log2FC!=0]<0.05)
+names(genesm1)=row.names(m1[m1$avg_log2FC!=0,])
+pwfm1=nullp(genesm1, "mm9", "geneSymbol")
+gom1= goseq(pwfm1, "mm9", "geneSymbol")
+openxlsx::write.xlsx(gom1, file="m1.xlsx", sheetName = "WT vs KO", append = FALSE)
+
+genesm2=as.integer(m2$p_val_adj[m2$avg_log2FC!=0]<0.05)
+names(genesm2)=row.names(m2[m2$avg_log2FC!=0,])
+pwfm2=nullp(genesm2, "mm9", "geneSymbol")
+gom2= goseq(pwfm2, "mm9", "geneSymbol")
+openxlsx::write.xlsx(gom2, file="m2.xlsx", sheetName = "WT vs KO", append = FALSE)
+
+genesm3=as.integer(m3$p_val_adj[m3$avg_log2FC!=0]<0.05)
+names(genesm3)=row.names(m3[m3$avg_log2FC!=0,])
+pwfm3=nullp(genesm3, "mm9", "geneSymbol")
+gom3= goseq(pwfm3, "mm9", "geneSymbol")
+openxlsx::write.xlsx(gom3, file="m3.xlsx", sheetName = "WT vs KO", append = FALSE)
+
+geneslp=as.integer(lp$p_val_adj[lp$avg_log2FC!=0]<0.05)
+names(geneslp)=row.names(lp[lp$avg_log2FC!=0,])
+pwflp=nullp(geneslp, "mm9", "geneSymbol")
+golp= goseq(pwflp, "mm9", "geneSymbol")
+openxlsx::write.xlsx(golp, file="lp.xlsx", sheetName = "WT vs KO", append = FALSE)
+
+genesmp=as.integer(mp$p_val_adj[mp$avg_log2FC!=0]<0.05)
+names(genesmp)=row.names(mp[mp$avg_log2FC!=0,])
+pwfmp=nullp(genesmp, "mm9", "geneSymbol")
+gomp= goseq(pwfmp, "mm9", "geneSymbol")
+openxlsx::write.xlsx(gomp, file="go.xlsx", sheetName = "mp", append = FALSE)
+
+genesmeg=as.integer(meg$p_val_adj[meg$avg_log2FC!=0]<0.05)
+names(genesmeg)=row.names(meg[meg$avg_log2FC!=0,])
+pwfmeg=nullp(genesmeg, "mm9", "geneSymbol")
+gomeg= goseq(pwfmeg, "mm9", "geneSymbol")
+openxlsx::write.xlsx(gomeg, file="meg.xlsx", sheetName = "WT vs KO", append = FALSE)
+```
+
