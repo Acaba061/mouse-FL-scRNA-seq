@@ -100,115 +100,6 @@ colnames(KO1S@meta.data)[which(names(KO1S@meta.data) == "GKO1")] <- "GT"
 colnames(KO2S@meta.data)[which(names(KO2S@meta.data) == "GKO2")] <- "GT"
 ```
 
-11vs14
-```{r}
-gao=subset(S2, idents = 'Gao')
-Idents(gao)="d14.5"
-gao$GT='d14.5'
-d11 = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/algomez/Downloads/filtered_feature_bc_matrix.h5", use.names=TRUE))
-G11 = rep('d11.5', times = 10602)
-d11@meta.data <- cbind(d11@meta.data, G11)
-colnames(d11@meta.data)[which(names(d11@meta.data) == "G11")] <- "GT"
-
-gao = merge(x = gao, y = d11)
-gao = NormalizeData(gao)
-gao = FindVariableFeatures(gao)
-gao = ScaleData(gao)
-gao = RunPCA(gao)
-gao = FindNeighbors(gao)
-gao = FindClusters(gao)
-gao = RunUMAP(gao, dims = 1:10)
-
-deg = FindMarkers(gao, ident.1="d11.5", ident.2 = "d14.5", group.by = "GT")
-deg$gene <- (rownames(deg))
-openxlsx::write.xlsx(deg, file="gao11vs14.xlsx", sheetName = "deg", append = TRUE)
-
-deg$gene <- toupper(rownames(deg))
-deg <- deg %>% arrange(desc(avg_log2FC))
-fc <- deg$avg_log2FC
-names(fc) <- deg$gene
-gsea<- fgsea(gene_sets, fc, eps=0)
-openxlsx::write.xlsx(gsea, file="gao11vs14.xlsx", sheetName = "gsea", append = TRUE)
-
-genes=as.integer(deg$p_val_adj[deg$avg_log2FC!=0]<0.05)
-names(genes)=row.names(deg[deg$avg_log2FC!=0,])
-pwf=nullp(genes, "mm9", "geneSymbol")
-go= goseq(pwf, "mm9", "geneSymbol")
-write.xlsx(go, file="gao11vs14.xlsx", sheetName = "GO", append = TRUE)
-
-sub=subset(gao, idents=c(0,1,2))
-hsc=FindMarkers(sub, ident.1="d11.5", ident.2 = "d14.5", group.by = "GT")
-hsc$gene <- (rownames(hsc))
-openxlsx::write.xlsx(hsc, file="hsc.xlsx", sheetName = "deg", append = TRUE)
-
-hsc$gene <- toupper(rownames(hsc))
-hsc <- hsc %>% arrange(desc(avg_log2FC))
-fc <- hsc$avg_log2FC
-names(fc) <- hsc$gene
-gsea<- fgsea(gene_sets, fc, eps=0)
-openxlsx::write.xlsx(gsea, file="hsc.xlsx", sheetName = "gsea", append = TRUE)
-
-genes=as.integer(hsc$p_val_adj[hsc$avg_log2FC!=0]<0.05)
-names(genes)=row.names(hsc[hsc$avg_log2FC!=0,])
-pwf=nullp(genes, "mm9", "geneSymbol")
-go= goseq(pwf, "mm9", "geneSymbol")
-write.xlsx(go, file="hsc.xlsx", sheetName = "GO", append = TRUE)
-```
-
-Gao vs ours 
-```{r}
-liu = CreateSeuratObject(counts = Read10X_h5(file="C:/Users/algomez/Downloads/outs/outs/filtered_feature_bc_matrix.h5", use.names=TRUE))
-l = rep('Liu', times = 8980)
-liu@meta.data <- cbind(liu@meta.data, l)
-colnames(liu@meta.data)[which(names(liu@meta.data) == "l")] <- "GT"
-liu[["percent.mito"]] <- PercentageFeatureSet(liu, pattern = "^mt-")
-
-S2 = merge(x = S, y = liu)
-S2 = NormalizeData(S2)
-S2 = FindVariableFeatures(S2)
-S2 = ScaleData(S2)
-S2 = RunPCA(S2)
-S2 = FindNeighbors(S2)
-S2 = FindClusters(S2)
-S2 = RunUMAP(S2, dims = 1:10)
-
-overall = FindMarkers(S2, ident.1="WT", ident.2 = "Gao", group.by = "GT")
-overall$gene <- (rownames(overall))
-openxlsx::write.xlsx(overall, file="Liu.xlsx", sheetName = "DEG WT vs Liu", append = TRUE)
-
-genesm1=as.integer(overall$adj.p.value[overall$logfoldchange!=0]<0.05)
-names(genesm1)=overall$gene_names
-pwfm1=nullp(genesm1, "mm9", "geneSymbol")
-gom1= goseq(pwfm1, "mm9", "geneSymbol")
-write.xlsx(gom1, file="Liu.xlsx", sheetName = "go WT vs Liu", append = TRUE)
-
-overall$gene <- toupper(overall$gene)
-overall <- overall %>% arrange(desc(logfoldchange))
-fcm1 <- overall$logfoldchange
-names(fcm1) <- overall$gene
-gseam1 <- fgsea(gene_sets, fcm1, eps=0)
-write.xlsx(gseam1, file="Liu.xlsx", sheetName = "gsea WT vs Liu")
-
-overall2 = FindMarkers(S2, ident.1="KO", ident.2 = "Gao", group.by = "GT")
-overall2$gene <- (rownames(overall2))
-write.xlsx(overall2, file="Liu.xlsx", sheetName = "DEG KO vs Liu", append = TRUE)
-
-genesm12=as.integer(overall2$adj.p.value[overall2$logfoldchange!=0]<0.05)
-names(genesm12)=overall2$gene_names
-pwfm12=nullp(genesm12, "mm9", "geneSymbol")
-gom12= goseq(pwfm12, "mm9", "geneSymbol")
-write.xlsx(gom12, file="Liu.xlsx", sheetName = "go KO vs Liu", append = TRUE)
-
-overall2$gene <- toupper(overall2$gene_names)
-overall2 <- overall2 %>% arrange(desc(logfoldchange))
-fcm12 <- overall2$logfoldchange
-names(fcm12) <- overall2$gene
-gseam12 <- fgsea(gene_sets, fcm12, eps=0)
-write.xlsx(gseam12, file="Liu.xlsx", sheetName = "gsea KO vs Liu")
-
-```
-
-
 #QC
 ```{r}
 WTS[["percent.mito"]] <- PercentageFeatureSet(WTS, pattern = "^mt-")
@@ -306,56 +197,6 @@ C9 = FindMarkers(S, ident.1=9, logfc.threshold = 3, only.pos = T)
 id=FetchData(S, vars=c('ident', 'GT'))
 ```
 
-
-
-```{r}
-##for trajectory
-
-S[["UMAP"]] <- S[["umap"]]
-
-cds <- as.cell_data_set(S, assay = "RNA")
-cds <- cluster_cells(cds)
-plot_cells(cds, show_trajectory_graph = FALSE)
-plot_cells(cds, group_cells_by = "partition", color_cells_by = "partition",
-           show_trajectory_graph = FALSE)
-
-
-
-integrated.sub <- subset(as.Seurat(cds, assay=NULL), monocle3_partitions == 1)
-integrated.sub <- SplitObject(integrated.sub, split.by = "orig.ident")
-for (i in seq_along(integrated.sub)) {
-    integrated.sub[[i]] <- NormalizeData(integrated.sub[[i]]) %>% FindVariableFeatures()
-}
-features <- SelectIntegrationFeatures(integrated.sub)
-for (i in seq_along(along.with = integrated.sub)) {
-    integrated.sub[[i]] <- ScaleData(integrated.sub[[i]], features = features) %>% RunPCA(features = features, verbose=F)
-}
-
-anchors <- FindIntegrationAnchors(integrated.sub, reference = c(1, 2), reduction = "rpca", dims = 1:30)
-integrated.sub <- IntegrateData(anchors, dims = 1:30)
-
-integrated.sub <- ScaleData(integrated.sub)
-integrated.sub <- RunPCA(integrated.sub)
-integrated.sub <- RunUMAP(integrated.sub, dims = 1:30, reduction.name = "UMAP")
-integrated.sub <- FindNeighbors(integrated.sub, dims = 1:30)
-integrated.sub <- FindClusters(integrated.sub)
-
-DimPlot(integrated.sub, group.by = c("orig.ident", "ident"))
-
-cds <- as.cell_data_set(integrated.sub, assay="RNA")
-cds <- cluster_cells(cds)
-cds <- learn_graph(cds)
-plot_cells(cds, label_groups_by_cluster = FALSE, label_leaves = FALSE, label_branch_points = FALSE)
-DefaultAssay(integrated.sub) <- "RNA"
-max.avp <- which.max(unlist(FetchData(integrated.sub, "Hlf"))) #Find the cell which has the highest Hlf (HSC marker) expression
-max.hlf <- colnames(integrated.sub)[max.hlf]
-cds <- order_cells(cds, root_cells = max.hlf)
-plot_cells(cds, color_cells_by = "pseudotime", label_cell_groups = F, label_leaves = F, 
-    label_branch_points = F)
-plot_cells(cds, label_cell_groups = T, label_leaves = T, 
-    label_branch_points = T)
-
-```
 #color palette
 ```{r}
 install.packages('pals')
@@ -363,7 +204,6 @@ library('pals')
 col1=DiscretePalette(n=14, palette = "alphabet")
 col2=DiscretePalette(n=14, palette = "alphabet2")
 ```
-
 
 ```{r}
 S = NormalizeData(S)
@@ -412,7 +252,6 @@ cds <- as.cell_data_set(S, assay = "RNA")
 cds <- cluster_cells(cds)
 
 ```
-
 
 ```{r}
 VlnPlot(S, features="Cd34", pt.size=0.0, sort = 'decreasing')
